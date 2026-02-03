@@ -1,0 +1,51 @@
+<%- include('./partials/header') %>
+
+<h2>Add Address (Customer / Vendor)</h2>
+
+<form id="addressForm" method="POST" novalidate>
+
+
+  <div class="mb-3">
+    <label>Address Name</label>
+    <input type="text" name="address_name" class="form-control" required />
+  </div>
+
+  <div class="mb-3">
+    <label>Person Type</label>
+    <select name="type_id" class="form-control" required>
+      <% types.forEach(t => { %>
+        <option value="<%= t.type_id %>">
+          <%= t.person_type %>
+        </option>
+      <% }) %>
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label>Location</label>
+    <input type="text" name="locations" class="form-control" />
+  </div>
+
+  <div class="mb-3">
+    <label>Pincode</label>
+    <input type="number" name="pincode" class="form-control" required />
+  </div>
+
+  <div class="mb-3">
+    <label>User</label>
+    <select name="user_id" class="form-control" required>
+      <% users.forEach(u => { %>
+        <option value="<%= u.user_id %>">
+          <%= u.user_name %>
+        </option>
+      <% }) %>
+    </select>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Save Address</button>
+
+</form>
+
+<script src="/public/addressAjax.js"></script>
+
+<%- include('./partials/footer') %>
