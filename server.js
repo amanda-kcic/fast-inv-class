@@ -1,71 +1,104 @@
-// CommonJs
-const fastify = require('fastify')({
-  logger: true
-})
-const pool=require('./db/pool.js')
-const fastifyStatic = require('@fastify/static')
-const bcryptjs=require('bcryptjs');
-
-// Register fastify-static to serve static files
+// ================== SETUP ==================
+const fastify = require('fastify')({ logger: true });
 const path = require('path');
+const bcrypt = require('bcryptjs');
+const pool = require('./db/pool');
 
-//registger view engine
+// Plugins
 fastify.register(require('@fastify/view'), {
-  engine:{ejs:require('ejs')},
-  root:path.join(__dirname,'views')
-})
+  engine: { ejs: require('ejs') },
+  root: path.join(__dirname, 'views')
+});
 
-fastify.register(fastifyStatic, {
+fastify.register(require('@fastify/static'), {
   root: path.join(__dirname, 'public'),
   prefix: '/public/',
 });
 
 fastify.register(require('@fastify/formbody'));
-// Serve index.html at root
-fastify.get('/', (request, reply) => {
-  return reply.view('login.ejs',{currentUser:"daniel"}); // index.html must be in the 'public' directory
+
+
+// ================== ROUTES ==================
+
+// Login page
+fastify.get('/', (req, reply) => {
+  return reply.view('login.ejs');
 });
 
-fastify.get('/users', async(request, reply) => {
-const roles=await pool.query('SELECT * FROM roles')
+// Login logic
+fastify.post('/login', async (req, reply) => {
+  const { user_name, passwords } = req.body;
 
- 
-  try{
- return reply.view('users.ejs', { currentUser: "daniel" , roles:roles.rows})
-  }catch(err){
-    console.error(err)
-    return reply.status(500).send('Server Error')
+  const user = await pool.query(
+    'SELECT * FROM users WHERE user_name=$1',
+    [user_name]
+  );
+
+  if (user.rows.length === 0) {
+    return reply.send("User not found");
   }
-})
 
-//submit users
+  const match = await bcrypt.compare(passwords, user.rows[0].passwords);
 
- // Handle form POST
-  fastify.post('/users/create', async (req, reply) => {
-    const { user_name, passwords, role_id } = req.body;
-    console.log(req.body);
-   
-
-    try {
-       let roleid =Number(role_id);
-       //hash password
-       const saltRounds=10;
-       const hashedPassword=await bcryptjs.hash(passwords,saltRounds);
-        await pool.query(
-            "INSERT INTO users (user_name, passwords, role_id) VALUES ($1, $2, $3)",
-            [user_name, hashedPassword, roleid]
-        );
-
-        return reply.send({ success: true, message: "User created" });
-
-    } catch (err) {
-        return reply.send({ success: false, message: err.message });
-    }
+  if (match) {
+    return reply.redirect('/dashboard');
+  } else {
+    return reply.send("Invalid password");
+  }
 });
 
-// Run the server!
+// Dashboard
+fastify.get('/dashboard', (req, reply) => {
+  return reply.view('dashboard.ejs');
+});
+
+// Users page
+fastify.get('/users', async (req, reply) => {
+  const roles = await pool.query('SELECT * FROM roles');
+  return reply.view('users.ejs', { roles: roles.rows });
+});
+
+// Create user
+fastify.post('/users/create', async (req, reply) => {
+  const { user_name, passwords, role_id } = req.body;
+
+  const hashedPassword = await bcrypt.hash(passwords, 10);
+
+  await pool.query(
+    "INSERT INTO users (user_name, passwords, role_id) VALUES ($1, $2, $3)",
+    [user_name, hashedPassword, Number(role_id)]
+  );
+
+  return reply.send({ message: "User created successfully" });
+});
+
+// Address form
+fastify.get('/address', async (req, reply) => {
+  const types = await pool.query('SELECT * FROM person_type');
+  const users = await pool.query('SELECT * FROM users');
+
+  return reply.view('address.ejs', {
+    types: types.rows,
+    users: users.rows
+  });
+});
+
+// Address AJAX save
+fastify.post('/address/create', async (req, reply) => {
+  const { address_name, type_id, locations, pincode, user_id } = req.body;
+
+  await pool.query(
+    `INSERT INTO address (address_name, type_id, locations, pincode, user_id)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [address_name, type_id, locations, pincode, user_id]
+  );
+
+  return reply.send({ message: "Address added successfully" });
+});
+
+
+// ================== START SERVER (LAST) ==================
 fastify.listen({ port: 3000 }, (err, address) => {
-  if (err) throw err
-  // Server is now listening on ${address}
-  fastify.log.info(`server listening on ${address}`)
-})
+  if (err) throw err;
+  fastify.log.info(`Server listening at ${address}`);
+});
