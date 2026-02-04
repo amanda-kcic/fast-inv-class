@@ -1,10 +1,15 @@
 // ================== SETUP ==================
+require('dotenv').config();
+
 const fastify = require('fastify')({ logger: true });
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const pool = require('./db/pool');
 
-// Plugins
+fastify.register(require('@fastify/cookie'));
+fastify.register(require('@fastify/formbody'));
+
 fastify.register(require('@fastify/view'), {
   engine: { ejs: require('ejs') },
   root: path.join(__dirname, 'views')
@@ -15,7 +20,31 @@ fastify.register(require('@fastify/static'), {
   prefix: '/public/',
 });
 
-fastify.register(require('@fastify/formbody'));
+
+// ================== JWT HELPERS ==================
+function generateToken(user) {
+  return jwt.sign(
+    { user_id: user.user_id, user_name: user.user_name },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+}
+
+function verifyJWT(req, reply, done) {
+  const { token } = req.cookies;
+
+  if (!token) {
+    return reply.redirect('/');
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    done();
+  } catch (err) {
+    return reply.redirect('/');
+  }
+}
 
 
 // ================== ROUTES ==================
@@ -25,35 +54,48 @@ fastify.get('/', (req, reply) => {
   return reply.view('login.ejs');
 });
 
-// Login logic
+// Login logic with error messages
 fastify.post('/login', async (req, reply) => {
   const { user_name, passwords } = req.body;
 
-  const user = await pool.query(
+  const result = await pool.query(
     'SELECT * FROM users WHERE user_name=$1',
     [user_name]
   );
 
-  if (user.rows.length === 0) {
-    return reply.send("User not found");
+  if (result.rows.length === 0) {
+    return reply.view('login.ejs', { error: "User not found" });
   }
 
-  const match = await bcrypt.compare(passwords, user.rows[0].passwords);
+  const user = result.rows[0];
+  const match = await bcrypt.compare(passwords, user.passwords);
 
-  if (match) {
-    return reply.redirect('/dashboard');
-  } else {
-    return reply.send("Invalid password");
+  if (!match) {
+    return reply.view('login.ejs', { error: "Incorrect password" });
   }
+
+  const token = generateToken(user);
+
+  reply
+    .setCookie('token', token, {
+      httpOnly: true,
+      path: '/'
+    })
+    .redirect('/dashboard');
 });
 
-// Dashboard
-fastify.get('/dashboard', (req, reply) => {
-  return reply.view('dashboard.ejs');
+// Logout
+fastify.get('/logout', (req, reply) => {
+  reply.clearCookie('token').redirect('/');
 });
 
-// Users page
-fastify.get('/users', async (req, reply) => {
+// Dashboard (Protected)
+fastify.get('/dashboard', { preHandler: verifyJWT }, (req, reply) => {
+  return reply.view('dashboard.ejs', { user: req.user });
+});
+
+// Users page (Protected)
+fastify.get('/users', { preHandler: verifyJWT }, async (req, reply) => {
   const roles = await pool.query('SELECT * FROM roles');
   return reply.view('users.ejs', { roles: roles.rows });
 });
@@ -72,8 +114,8 @@ fastify.post('/users/create', async (req, reply) => {
   return reply.send({ message: "User created successfully" });
 });
 
-// Address form
-fastify.get('/address', async (req, reply) => {
+// Address form (Protected)
+fastify.get('/address', { preHandler: verifyJWT }, async (req, reply) => {
   const types = await pool.query('SELECT * FROM person_type');
   const users = await pool.query('SELECT * FROM users');
 
@@ -83,8 +125,8 @@ fastify.get('/address', async (req, reply) => {
   });
 });
 
-// Address AJAX save
-fastify.post('/address/create', async (req, reply) => {
+// Address AJAX save (Protected)
+fastify.post('/address/create', { preHandler: verifyJWT }, async (req, reply) => {
   const { address_name, type_id, locations, pincode, user_id } = req.body;
 
   await pool.query(
@@ -97,7 +139,7 @@ fastify.post('/address/create', async (req, reply) => {
 });
 
 
-// ================== START SERVER (LAST) ==================
+// ================== START SERVER (ALWAYS LAST) ==================
 fastify.listen({ port: 3000 }, (err, address) => {
   if (err) throw err;
   fastify.log.info(`Server listening at ${address}`);

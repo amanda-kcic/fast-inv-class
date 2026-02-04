@@ -1,3 +1,27 @@
 <%- include('./partials/header') %>
-    <h1>Login Page</h1>
+
+<div class="container mt-5" style="max-width:700px;">
+  <h2 class="mb-4">Login</h2>
+
+  <% if (typeof error !== 'undefined') { %>
+    <div class="alert alert-danger">
+      <%= error %>
+    </div>
+  <% } %>
+
+  <form action="/login" method="POST">
+    <div class="mb-3">
+      <label>Username</label>
+      <input type="text" name="user_name" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+      <label>Password</label>
+      <input type="password" name="passwords" class="form-control" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Login</button>
+  </form>
+</div>
+
 <%- include('./partials/footer') %>
